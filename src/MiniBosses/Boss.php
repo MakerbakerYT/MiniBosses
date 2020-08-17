@@ -18,7 +18,7 @@ use pocketmine\nbt\tag\DoubleTag;
 use pocketmine\nbt\tag\IntTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\StringTag;
-use pocketmine\network\mcpe\protocol\AddEntityPacket;
+use pocketmine\network\mcpe\protocol\AddActorPacket;
 use pocketmine\network\mcpe\protocol\AddPlayerPacket;
 use pocketmine\network\mcpe\protocol\MobEquipmentPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
@@ -45,6 +45,9 @@ class Boss extends Creature{
 	public $skin;
 	/** @var Item  */
 	public $heldItem;
+
+	/** @var int*/
+	protected $jumpTicks = 0;
 
 	public function __construct(Level $level,CompoundTag $nbt){
 		$this->scale = $nbt->getFloat("scale",1);
@@ -144,7 +147,7 @@ class Boss extends Creature{
 			$pk->entries = [PlayerListEntry::createRemovalEntry($uuid)];
 			$player->dataPacket($pk);
 		}else{
-			$pk = new AddEntityPacket();
+			$pk = new AddActorPacket();
 			$pk->entityRuntimeId = $this->getID();
 			$pk->type = $this->networkId;
 			$pk->position = $this->asVector3();
@@ -203,6 +206,9 @@ class Boss extends Creature{
 
 	public function onUpdate(int $currentTick): bool {
 		if($this->knockbackTicks > 0) $this->knockbackTicks--;
+		if($this->jumpTicks > 0) {
+			--$this->jumpTicks;
+		}
 		$player = $this->target;
 		if($player instanceof Living && $player->isAlive()){
 			if($this->distanceSquared($this->spawnPos) > $this->range){
@@ -216,6 +222,7 @@ class Boss extends Creature{
 					}else{
 						$this->motion->y -= $this->gravity;
 					}
+					$this->move($this->motion->x, $this->motion->y, $this->motion->z)
 					$this->move($this->motion->x, $this->motion->y, $this->motion->z);
 				}elseif($this->knockbackTicks > 0){
 
@@ -230,6 +237,11 @@ class Boss extends Creature{
 						$diff = abs($x) + abs($z);
 						$this->motion->x = $this->speed * 0.15 * ($x / $diff);
 						$this->motion->z = $this->speed * 0.15 * ($z / $diff);
+					}
+					if($this->isCollidedHorizontally && $this->jumpTicks === 0) {
+						$this->jump();
+					} else {
+						$this->motion->y -= $this->gravity;
 					}
 					$this->yaw = rad2deg(atan2(-$x,$z));
 					if($this->networkId === EntityIds::ENDER_DRAGON){
@@ -248,6 +260,11 @@ class Boss extends Creature{
 		$this->updateMovement();
 		parent::onUpdate($currentTick);
 		return !$this->closed;
+	}
+
+	public function jump() :void{
+		parent::jump();
+		$this->jumpTicks = 5;
 	}
 
 	public function attack(EntityDamageEvent $source): void{
